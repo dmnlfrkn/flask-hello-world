@@ -1,6 +1,6 @@
 Flask==3.0.3
-transformers==4.38.0
-flask_cors
+bcrypt
+requests
 flask_jwt_extended
-torch
+flask_cors
 bcrypt
