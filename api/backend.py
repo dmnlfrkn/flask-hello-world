@@ -1,13 +1,11 @@
 from flask import Flask, request, jsonify
-from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
 from flask_cors import CORS
+import requests
 from flask_jwt_extended import JWTManager, jwt_required, create_access_token, get_jwt_identity
 from database import db, User, History
 import bcrypt
 
 app = Flask(__name__)
-
-
 app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///database.db"
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['JWT_SECRET_KEY'] = 'your-secret-key'
@@ -19,48 +17,70 @@ CORS(app)
 with app.app_context():
     db.create_all()
 
-# Model ve tokenizer
-#model_name = "../model" #local
-model_name = "panagoa/nllb-200-1.3b-kbd-v0.2" #huggingface
-tokenizer = AutoTokenizer.from_pretrained(model_name)
-model = AutoModelForSeq2SeqLM.from_pretrained(model_name)
-
+# HuggingFace API ayarları
+HUGGINGFACE_API_TOKEN = "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"
+MODEL_NAME = "panagoa/nllb-200-1.3b-kbd-v0.2"
 
 LANG_CODES = {
     "Türkçe": "tur_Latn",
     "Çerkesce (Doğu)": "kbd_Cyrl",
-
 }
 
-@app.route('/register',methods =['POST'])
+
+def hf_translate(text, src_lang_code, tgt_lang_code):
+    headers = {"Authorization": f"Bearer {HUGGINGFACE_API_TOKEN}"}
+    payload = {
+        "inputs": f"{src_lang_code}: {text}",
+        "parameters": {
+            "forced_bos_token_id": tgt_lang_code
+        }
+    }
+    response = requests.post(
+        f"https://api-inference.huggingface.co/models/{MODEL_NAME}",
+        headers=headers,
+        json=payload
+    )
+
+    if response.status_code == 200:
+        result = response.json()
+        if isinstance(result, list) and len(result) > 0:
+            return result[0]["generated_text"]
+        else:
+            return None
+    else:
+        raise Exception(f"HuggingFace API hatası: {response.text}")
+
+
+@app.route('/register', methods=['POST'])
 def register():
     data = request.get_json()
     username = data.get('username')
     password = data.get('password')
 
     if not username or not password:
-        return jsonify({'message' : 'Kullanıcı adı ve şifre gerekli'}),400
-    if User.query.filter_by(username = username).first():
-        return jsonify({'message':'kullanıcı adı zaten alınmış'}),400
-    
+        return jsonify({'message': 'Kullanıcı adı ve şifre gerekli'}), 400
+    if User.query.filter_by(username=username).first():
+        return jsonify({'message': 'kullanıcı adı zaten alınmış'}), 400
+
     password_hash = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
     user = User(username=username, password_hash=password_hash)
     db.session.add(user)
     db.session.commit()
-    return jsonify({'message':'kullanıcı oluştururldu'}),201
+    return jsonify({'message': 'kullanıcı oluştururldu'}), 201
 
-@app.route('/login',methods=['POST'])
+
+@app.route('/login', methods=['POST'])
 def login():
     data = request.get_json()
     username = data.get('username')
     password = data.get('password')
 
-    user = User.query.filter_by(username = username).first()
-    if not user or not bcrypt.checkpw(password.encode('utf-8'),user.password_hash.encode('utf-8')):
-        return jsonify({'message':'kullanıcı adı veya şifre hatalı'}),401
+    user = User.query.filter_by(username=username).first()
+    if not user or not bcrypt.checkpw(password.encode('utf-8'), user.password_hash.encode('utf-8')):
+        return jsonify({'message': 'kullanıcı adı veya şifre hatalı'}), 401
 
     access_token = create_access_token(identity=str(user.id))
-    return jsonify({'access_token':access_token}),200
+    return jsonify({'access_token': access_token}), 200
 
 
 @app.route("/translateByLogin", methods=["POST"])
@@ -69,7 +89,7 @@ def translateByLogin():
     user_id = get_jwt_identity()
     data = request.get_json()
     text = data.get("text", "").strip()
-    source_lang = data.get("source_lang", "Kabardeyce")
+    source_lang = data.get("source_lang", "Çerkesce (Doğu)")
     target_lang = data.get("target_lang", "Türkçe")
 
     if not text:
@@ -81,7 +101,6 @@ def translateByLogin():
     if not src_code or not tgt_code:
         return jsonify({"error": "Dil kodu tanınmadı."}), 400
 
-    # Geçmişten çeviri kontrolü
     existing_history = History.query.filter_by(
         input_text=text,
         source_lang=source_lang,
@@ -93,16 +112,8 @@ def translateByLogin():
         return jsonify({"çeviri": existing_history.target_text, "kaynak": "veritabanı"})
 
     try:
-        # Model ile çevir
-        inputs = tokenizer(f"{src_code}: {text}", return_tensors="pt")
-        translated_tokens = model.generate(
-            **inputs,
-            forced_bos_token_id=tokenizer.lang_code_to_id[tgt_code],
-            max_length=50
-        )
-        translation = tokenizer.batch_decode(translated_tokens, skip_special_tokens=True)[0]
+        translation = hf_translate(text, src_code, tgt_code)
 
-        # Veritabanına kaydet
         new_history = History(
             input_text=text,
             target_text=translation,
@@ -113,16 +124,17 @@ def translateByLogin():
         db.session.add(new_history)
         db.session.commit()
 
-        return jsonify({"çeviri": translation, "kaynak": "model"}), 200
+        return jsonify({"çeviri": translation, "kaynak": "huggingface"}), 200
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
 
 @app.route("/translate", methods=["POST"])
 def translate():
     data = request.get_json()
     text = data.get("text", "").strip()
-    source_lang = data.get("source_lang", "Kabardeyce")
+    source_lang = data.get("source_lang", "Çerkesce (Doğu)")
     target_lang = data.get("target_lang", "Türkçe")
 
     if not text:
@@ -135,20 +147,11 @@ def translate():
         return jsonify({"error": "Dil kodu tanınmadı."}), 400
 
     try:
-        # Model ile çeviri
-        inputs = tokenizer(f"{src_code}: {text}", return_tensors="pt")
-        translated_tokens = model.generate(
-            **inputs,
-            forced_bos_token_id=tokenizer.lang_code_to_id[tgt_code],
-            max_length=50
-        )
-        translation = tokenizer.batch_decode(translated_tokens, skip_special_tokens=True)[0]
-
-        return jsonify({"çeviri": translation, "kaynak": "model"}), 200
+        translation = hf_translate(text, src_code, tgt_code)
+        return jsonify({"çeviri": translation, "kaynak": "huggingface"}), 200
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-
 
 
 if __name__ == "__main__":
