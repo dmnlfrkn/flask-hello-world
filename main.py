@@ -18,7 +18,8 @@ with app.app_context():
     db.create_all()
 
 # HuggingFace API ayarları
-HUGGINGFACE_API_TOKEN = "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"
+hg_token = "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"
+HUGGINGFACE_API_TOKEN = hg_token
 MODEL_NAME = "panagoa/nllb-200-1.3b-kbd-v0.2"
 
 LANG_CODES = {
