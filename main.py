@@ -23,7 +23,7 @@ import os
 
 load_dotenv()
 
-HUGGINGFACE_API_TOKEN = os.getenv("hg_token")
+HUGGINGFACE_API_TOKEN = os.getenv("HF_TOKEN")
 MODEL_NAME = "panagoa/nllb-200-1.3b-kbd-v0.2"
 
 LANG_CODES = {
