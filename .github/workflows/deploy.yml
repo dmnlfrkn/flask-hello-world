@@ -1,0 +1,2 @@
+env:
+  HUGGINGFACE_API_TOKEN: ${{ secrets.HUGGINGFACE_API_TOKEN }}
