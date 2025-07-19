@@ -2,8 +2,8 @@ Flask==3.0.3
 requests
 flask_jwt_extended
 Flask-Cors
-Flask-JWT-Extended
 requests
 SQLAlchemy
 bcrypt
 gunicorn
+flask_sqlalchemy
