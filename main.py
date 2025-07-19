@@ -18,11 +18,7 @@ with app.app_context():
     db.create_all()
 
 # HuggingFace API ayarları
-from dotenv import load_dotenv
 import os
-
-load_dotenv()
-
 HUGGINGFACE_API_TOKEN = os.getenv("HUGGINGFACE_API_TOKEN")
 MODEL_NAME = "panagoa/nllb-200-1.3b-kbd-v0.2"
 
