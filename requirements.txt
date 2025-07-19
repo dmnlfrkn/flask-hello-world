@@ -7,3 +7,4 @@ SQLAlchemy
 bcrypt
 gunicorn
 flask_sqlalchemy
+python-dotenv
